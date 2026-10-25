@@ -1095,8 +1095,8 @@ public class Tiresias {
             String hint = k.equals("default_value")
                 ? " The key is \"default\" (the README's default_value is out of date)."
                 : k.equals("format")
-                  ? " Use \"formatter\": {\"key\": \"divide\", \"arg\": N} instead."
-                  : " Typo?";
+                    ? " Use \"formatter\": {\"key\": \"divide\", \"arg\": N} instead."
+                    : " Typo?";
             return (
                 "Unknown " + kind + " key \"" + k + "\". definition-rs rejects unknown keys, so the build fails." + hint
             );
@@ -7356,28 +7356,28 @@ public class Tiresias {
 
         void showRules() {
             String html = """
-            <html><body style='width:520px;font-family:sans-serif'>
-            <p><b>Errors</b> break the spec build or code generation. <b>Warnings</b> break a "should" rule. \
-            <b>Info</b> notes style and documentation gaps.</p>
-            <p><b>Keys</b>: definition-rs rejects any key it doesn't know, in messages, points, fields and sims. \
-            The point default is "default" (not default_value), and scaling uses "formatter" (not format).</p>
-            <p><b>Messages</b>: id is a unique lowercase-0x hex string; IDs above 0x7FF need is_ext; \
-            desc uses only letters, whitespace and _; total bits are a multiple of 8 and at most 64; \
-            bidir_mode is broadcast or oneshot; clients are supported ports (1882).</p>
-            <p><b>Points</b>: parsed points are 1–32 bits; padding points (parse:false) only contain size; \
-            signed integers are 8/16/32 bits and byte aligned; IEEE754 floats are 32 bits; \
-            points of 8 bits or fewer have no endianness; little-endian points are byte aligned and make the \
-            whole message byte aligned; c_type is wide enough; byte-sized values don't start mid-byte; \
-            sim is a sweep or an enum whose frequencies add up to 1; sim and default values fit after the formatter.</p>
-            <p><b>Fields</b>: values and {n} topic placeholders reference existing parsed points (indexed from 1); \
-            every field has unit and doc; topics have no trailing slash, whitespace or wildcards, and 3+ levels \
-            are preferred; encodable topics live under Calypso/Bidir/State/{key}/; topics are unique across all files.</p>
-            <p><b>firmware-rs cangen</b> also needs unique struct names (from desc) and point accessor names \
-            (snake_case of name), no Rust keywords, divide/multiply formatters with a positive whole-number arg, \
-            and no formatter, float or IEEE754 on little-endian points. Unnamed points become padding there.</p>
-            <p>From the command line: <tt>java -jar Tiresias.jar --validate &lt;folder&gt; [--strict] [--info]</tt></p>
-            </body></html>
-            """;
+                <html><body style='width:520px;font-family:sans-serif'>
+                <p><b>Errors</b> break the spec build or code generation. <b>Warnings</b> break a "should" rule. \
+                <b>Info</b> notes style and documentation gaps.</p>
+                <p><b>Keys</b>: definition-rs rejects any key it doesn't know, in messages, points, fields and sims. \
+                The point default is "default" (not default_value), and scaling uses "formatter" (not format).</p>
+                <p><b>Messages</b>: id is a unique lowercase-0x hex string; IDs above 0x7FF need is_ext; \
+                desc uses only letters, whitespace and _; total bits are a multiple of 8 and at most 64; \
+                bidir_mode is broadcast or oneshot; clients are supported ports (1882).</p>
+                <p><b>Points</b>: parsed points are 1–32 bits; padding points (parse:false) only contain size; \
+                signed integers are 8/16/32 bits and byte aligned; IEEE754 floats are 32 bits; \
+                points of 8 bits or fewer have no endianness; little-endian points are byte aligned and make the \
+                whole message byte aligned; c_type is wide enough; byte-sized values don't start mid-byte; \
+                sim is a sweep or an enum whose frequencies add up to 1; sim and default values fit after the formatter.</p>
+                <p><b>Fields</b>: values and {n} topic placeholders reference existing parsed points (indexed from 1); \
+                every field has unit and doc; topics have no trailing slash, whitespace or wildcards, and 3+ levels \
+                are preferred; encodable topics live under Calypso/Bidir/State/{key}/; topics are unique across all files.</p>
+                <p><b>firmware-rs cangen</b> also needs unique struct names (from desc) and point accessor names \
+                (snake_case of name), no Rust keywords, divide/multiply formatters with a positive whole-number arg, \
+                and no formatter, float or IEEE754 on little-endian points. Unnamed points become padding there.</p>
+                <p>From the command line: <tt>java -jar Tiresias.jar --validate &lt;folder&gt; [--strict] [--info]</tt></p>
+                </body></html>
+                """;
             JOptionPane.showMessageDialog(
                 this,
                 new JLabel(html),
@@ -8020,8 +8020,8 @@ public class Tiresias {
                             (other.isEmpty()
                                 ? ""
                                 : ", also in " +
-                                  escHtml(other.getFirst()) +
-                                  (other.size() > 1 ? " +" + (other.size() - 1) : "")) +
+                                      escHtml(other.getFirst()) +
+                                      (other.size() > 1 ? " +" + (other.size() - 1) : "")) +
                             "</font></html>"
                     );
                     cb.setFocusable(false);
@@ -9362,8 +9362,8 @@ public class Tiresias {
                     String init = vals.containsKey(i)
                         ? vals.get(i)
                         : plain(num(p, "default")).isEmpty()
-                          ? "0"
-                          : plain(num(p, "default"));
+                            ? "0"
+                            : plain(num(p, "default"));
                     vals.put(i, init);
                     JTextField input;
                     JComponent editorComp;

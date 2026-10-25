@@ -425,13 +425,49 @@ tasks.register('appImage', Exec) {
 // Formatting: Spotless runs Prettier with prettier-plugin-java (versions pinned so formatting never
 // changes underneath you). Spotless doesn't read .prettierrc files, so the settings live here.
 
-def prettierVersion = '3.3.3'
-def prettierJavaVersion = '2.6.7'
+// prettier-plugin-java 2.9.7 (May 2026) with the Prettier release current when it shipped. Older plugin
+// versions can't parse some of the Java 21 syntax Tiresias uses. Bump both together.
+def prettierVersion = '3.8.3'
+def prettierJavaVersion = '2.9.7'
+
+// Find Node.js even when Gradle runs inside IntelliJ: an IDE opened from the Dock doesn't get your terminal's
+// PATH, so Node installed with Homebrew, nvm, Volta or fnm can be invisible to it. Checks -PnodeDir=<folder with
+// node in it> (or nodeDir=... in ~/.gradle/gradle.properties) first, then PATH, then the usual install folders.
+def nodeDir = {
+    def exe = hostWindows ? 'node.exe' : 'node'
+    def home = System.getProperty('user.home')
+    def dirs = []
+    if (findProperty('nodeDir')) dirs << findProperty('nodeDir').toString()
+    dirs += (System.getenv('PATH') ?: '').split(File.pathSeparator).toList()
+    dirs += ['/opt/homebrew/bin', '/usr/local/bin', "${home}/.volta/bin", "${home}/.local/share/fnm/aliases/default/bin",
+             "${home}/Library/Application Support/fnm/aliases/default/bin", "${home}/.asdf/shims", 'C:/Program Files/nodejs']
+    def nvm = new File(home, '.nvm/versions/node')
+    if (nvm.isDirectory()) {
+        // newest nvm-installed version first, comparing numerically (v20.11.0 before v9.11.2)
+        def number = { File d -> d.name.replaceFirst('^v', '').tokenize('.').collect { it.isInteger() ? it as int : 0 } + [0, 0, 0] }
+        def installed = nvm.listFiles().findAll { it.isDirectory() }
+        installed.sort { a, b ->
+            def x = number(a), y = number(b)
+            y[0] <=> x[0] ?: y[1] <=> x[1] ?: y[2] <=> x[2]
+        }
+        dirs += installed.collect { new File(it, 'bin').path }
+    }
+    dirs.find { it && new File(it.toString(), exe).canExecute() }
+}()
+// Point Spotless's Prettier steps at that Node (and the npm beside it) instead of relying on PATH.
+def withNode = { step ->
+    if (nodeDir) step.nodeExecutable(new File(nodeDir, hostWindows ? 'node.exe' : 'node'))
+            .npmExecutable(new File(nodeDir, hostWindows ? 'npm.cmd' : 'npm'))
+    step
+}
 
 spotless {
     java {
         target 'Tiresias.java', 'src/main/java/**/*.java'
-        prettier(['prettier': prettierVersion, 'prettier-plugin-java': prettierJavaVersion])
+        // Escape hatch: code between // spotless:off and // spotless:on is never passed to the formatter,
+        // for the rare construct prettier-plugin-java can't parse or formats badly.
+        toggleOffOn()
+        withNode(prettier(['prettier': prettierVersion, 'prettier-plugin-java': prettierJavaVersion]))
                 .config([
                         'parser'    : 'java',
                         'plugins'   : ['prettier-plugin-java'],   // Prettier 3 needs plugins listed as well as installed
@@ -442,7 +478,7 @@ spotless {
     // Docs and CI config: Prettier's built-in Markdown and YAML formatting
     format 'docs', {
         target '*.md', '.github/**/*.yml'
-        prettier(prettierVersion).config(['tabWidth': 2])
+        withNode(prettier(prettierVersion)).config(['tabWidth': 2])
     }
     // Build files: just tidy whitespace (CAN spec JSON is never touched, so it keeps the jq / format.sh layout)
     format 'misc', {
