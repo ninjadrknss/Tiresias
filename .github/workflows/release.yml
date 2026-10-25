@@ -1,0 +1,88 @@
+name: Release
+
+# Push a tag like v1.2.0 to build every bundle and publish a GitHub Release with them attached:
+#   git tag v1.2.0 && git push origin v1.2.0
+# Tags with a dash (v1.3.0-beta.1) become pre-releases.
+# "Run workflow" on the Actions tab builds the same files without publishing (download them from the run).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # lets the workflow create the release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14"
+
+      - name: Work out the version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"   # test builds from "Run workflow"
+          fi
+
+      # One Linux runner cross-builds every platform's bundle (each links that platform's Java runtime).
+      - name: Build the jar and all bundles
+        run: gradle jar bundleAll -PreleaseVersion=${{ steps.version.outputs.version }}
+
+      - name: Collect the release files
+        run: |
+          v="${{ steps.version.outputs.version }}"
+          mkdir release
+          cp build/dist/* release/
+          cp build/libs/Tiresias.jar "release/Tiresias-$v.jar"
+          (cd release && sha256sum * > SHA256SUMS.txt)
+          ls -la release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tiresias-${{ steps.version.outputs.version }}
+          path: release/*
+
+      - name: Publish the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ steps.version.outputs.version }}"
+          cat > notes.md <<EOF
+          ## Downloads
+
+          | Platform | File |
+          | --- | --- |
+          | macOS (Apple Silicon) | \`Tiresias-$v-macos-aarch64.tar.gz\` |
+          | Windows (Intel/AMD) | \`Tiresias-$v-windows-x64.zip\` |
+          | Windows (ARM) | \`Tiresias-$v-windows-aarch64.zip\` |
+          | Linux (x64) | \`Tiresias-$v-linux-x64.tar.gz\` |
+          | Any OS with Java 21+ | \`Tiresias-$v.jar\` (run with \`java -jar Tiresias-$v.jar\`) |
+
+          Each bundle includes its own Java runtime, so nothing else needs installing. See the README inside for how to start it.
+
+          **macOS:** the app isn't signed, so macOS blocks it at first. After the first attempt, open System Settings → Privacy & Security and click **Open Anyway**, or run \`xattr -dr com.apple.quarantine Tiresias.app\` once.
+
+          **Windows:** if SmartScreen warns about \`Tiresias.bat\`, click **More info → Run anyway**.
+
+          Checksums for every file are in \`SHA256SUMS.txt\`.
+
+          EOF
+          prerelease=""
+          [[ "$v" == *-* ]] && prerelease="--prerelease"
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --title "Tiresias $v" \
+            --notes-file notes.md \
+            --generate-notes \
+            --verify-tag \
+            $prerelease
