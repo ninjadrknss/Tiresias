@@ -1,7 +1,14 @@
-# Compiled class file
+# Tiresias .gitignore
+# Everything the Gradle build produces (jar, bundles, Java runtimes, downloaded JDK modules,
+# icons, jpackage apps) lands in build/, which is ignored below. Keep these in git:
+#   Tiresias.java, build.gradle, settings.gradle, gradle.properties, icon.png (if you add one),
+#   gradlew, gradlew.bat, gradle/wrapper/, .github/
+
+### Java
+# Compiled class files
 *.class
 
-# Log file
+# Log files (also covers candump logs saved as .log)
 *.log
 
 # BlueJ files
@@ -10,7 +17,7 @@
 # Mobile Tools for Java (J2ME)
 .mtj.tmp/
 
-# Package Files #
+# Package files
 *.jar
 *.war
 *.nar
@@ -19,6 +26,63 @@
 *.tar.gz
 *.rar
 
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+# JVM crash logs and heap dumps
 hs_err_pid*
 replay_pid*
+*.hprof
+
+### Gradle
+.gradle
+**/build/
+!src/**/build/
+
+# Gradle GUI config
+gradle-app.setting
+
+# Keep the Gradle wrapper (its jar would otherwise match *.jar above)
+!gradle-wrapper.jar
+!gradle-wrapper.properties
+
+# Cache of project task names
+.gradletasknamecache
+
+### Installers jpackage can make (normally inside build/, ignored here in case they're copied out)
+*.dmg
+*.pkg
+*.msi
+*.exe
+*.deb
+*.rpm
+
+### Tiresias
+# Saving writes spec.json.tmp and then renames it; a crash mid-save can leave one behind
+*.json.tmp
+# Class-data (CDS) archives that speed up startup; the launchers keep theirs in your user cache folder
+*.jsa
+
+### IntelliJ IDEA (the whole folder: this is a personal project, so no shared IDE settings)
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+### VS Code
+.vscode/
+
+### Eclipse
+.project
+.classpath
+.settings/
+bin/
+
+### macOS
+.DS_Store
+._*
+
+### Windows
+Thumbs.db
+desktop.ini
+
+### Linux editors' backup files
+*~
