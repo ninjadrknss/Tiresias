@@ -1,7 +1,7 @@
 # Tiresias .gitignore
 # Everything the Gradle build produces (jar, bundles, Java runtimes, downloaded JDK modules,
 # icons, jpackage apps) lands in build/, which is ignored below. Keep these in git:
-#   Tiresias.java, build.gradle, settings.gradle, gradle.properties, icon.png (if you add one),
+#   src/, tools/, packaging/, build.gradle, settings.gradle, icon.png (if you add one),
 #   gradlew, gradlew.bat, gradle/wrapper/, .github/
 
 ### Java
@@ -55,6 +55,12 @@ gradle-app.setting
 *.rpm
 
 ### Tiresias
+# The disk image's background art is drawn at build time (packaging/DmgBackground.java), and dmgbuild/hdiutil
+# can leave work files behind if a build is interrupted
+packaging/*.png
+*.sparseimage
+*.sparsebundle
+*.dmg.shadow
 # Saving writes spec.json.tmp and then renames it; a crash mid-save can leave one behind
 *.json.tmp
 # Class-data (CDS) archives that speed up startup; the launchers keep theirs in your user cache folder

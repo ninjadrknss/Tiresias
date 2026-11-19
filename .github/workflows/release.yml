@@ -4,6 +4,9 @@ name: Release
 #   git tag v1.2.0 && git push origin v1.2.0
 # Tags with a dash (v1.3.0-beta.1) become pre-releases.
 # "Run workflow" on the Actions tab builds the same files without publishing (download them from the run).
+#
+# Three jobs: "build" cross-builds every bundle on Linux, "dmg" turns that macOS bundle into a .dmg on a Mac
+# (dmgbuild needs hdiutil), and "publish" collects everything, writes the checksums and makes the release.
 on:
   push:
     tags: ["v*"]
@@ -13,8 +16,10 @@ permissions:
   contents: write # lets the workflow create the release
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -44,26 +49,93 @@ jobs:
           mkdir release
           cp build/dist/* release/
           cp build/libs/Tiresias.jar "release/Tiresias-$v.jar"
+          ls -la release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundles
+          path: release/*
+          retention-days: 1
+
+  # The macOS disk image: the same Tiresias.app as in the .tar.gz above, beside an Applications shortcut
+  dmg:
+    needs: build
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 1.6.x drives hdiutil, which works on every macOS runner; dmgbuild 2.x uses `diskutil image`, which older macOS lacks
+      - name: Install dmgbuild
+        run: pip install dmgbuild==1.6.7
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundles
+          path: bundles
+
+      # hdiutil on CI runners sometimes fails with "Resource busy", so try up to three times
+      - name: Build the .dmg
+        run: |
+          v="${{ needs.build.outputs.version }}"
+          for attempt in 1 2 3; do
+            gradle dmg -PreleaseVersion="$v" -PmacBundle="bundles/Tiresias-$v-macos-aarch64.tar.gz" && break
+            [[ $attempt == 3 ]] && exit 1
+            echo "dmg attempt $attempt failed, retrying"; sleep 10
+          done
+          ls -la build/dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dmg
+          path: build/dist/*.dmg
+          retention-days: 1
+
+  publish:
+    needs: [build, dmg]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundles
+          path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: dmg
+          path: release
+
+      - name: Write the checksums
+        run: |
           (cd release && sha256sum * > SHA256SUMS.txt)
           ls -la release
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Tiresias-${{ steps.version.outputs.version }}
+          name: Tiresias-${{ needs.build.outputs.version }}
           path: release/*
 
       - name: Publish the GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          v="${{ steps.version.outputs.version }}"
+          v="${{ needs.build.outputs.version }}"
           cat > notes.md <<EOF
           ## Downloads
 
           | Platform | File |
           | --- | --- |
-          | macOS (Apple Silicon) | \`Tiresias-$v-macos-aarch64.tar.gz\` |
+          | macOS (Apple Silicon) | \`Tiresias-$v-macos-aarch64.dmg\` (open it and drag Tiresias to Applications), or the same app in \`Tiresias-$v-macos-aarch64.tar.gz\` |
           | Windows (Intel/AMD) | \`Tiresias-$v-windows-x64.zip\` |
           | Windows (ARM) | \`Tiresias-$v-windows-aarch64.zip\` |
           | Linux (x64) | \`Tiresias-$v-linux-x64.tar.gz\` |
@@ -71,7 +143,7 @@ jobs:
 
           Each bundle includes its own Java runtime, so nothing else needs installing. See the README inside for how to start it.
 
-          **macOS:** the app isn't signed, so macOS blocks it at first. After the first attempt, open System Settings → Privacy & Security and click **Open Anyway**, or run \`xattr -dr com.apple.quarantine Tiresias.app\` once.
+          **macOS:** the app isn't signed, so macOS blocks it at first. After the first attempt, open System Settings → Privacy & Security and click **Open Anyway** (on macOS 14 and earlier you can also right-click the app and choose **Open**), or run \`xattr -dr com.apple.quarantine /Applications/Tiresias.app\` once.
 
           **Windows:** if SmartScreen warns about \`Tiresias.bat\`, click **More info → Run anyway**.
 
