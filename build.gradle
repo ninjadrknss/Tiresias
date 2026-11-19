@@ -3,6 +3,7 @@
 //   gradle jar                    build/libs/Tiresias.jar: one jar with FlatLaf inside (runs on Java 21+)
 //   gradle bundleAll              build/dist/ self-contained bundles for every platform below
 //   gradle bundleMacosAarch64     ...or one at a time: bundleWindowsX64, bundleWindowsAarch64, bundleLinuxX64
+//   gradle dmg                    build/dist/Tiresias-<version>-macos-aarch64.dmg (on a Mac, needs dmgbuild; see below)
 //   gradle appImage               native launcher (.exe / .app) for the machine you're on, via jpackage
 //   gradle runApp -Pspec=folder   run the browser
 //   gradle validateSpec -Pspec=folder [-Pstrict]   headless validation, fails the build on errors
@@ -32,12 +33,12 @@ repositories {
 
 dependencies {
     // Modern look for the standard Swing parts (fields, menus, dialogs, file chooser). Merged into the jar below.
-    // The app still runs without it (java Tiresias.java) using its built-in look. Bump the version freely.
+    // The app still runs without it (compiled with plain javac) using its built-in look. Bump the version freely.
     implementation 'com.formdev:flatlaf:3.5.4'
 }
 
 // Release builds pass the tag's version (-PreleaseVersion=1.2.0); local builds use this default.
-version = (findProperty('releaseVersion') ?: '1.0.0').toString()
+version = (findProperty('releaseVersion') ?: '1.1.0').toString()
 
 def jdkFeature = (findProperty('jdkFeature') ?: '21').toString()
 def runtimeModules = (findProperty('runtimeModules') ?: 'java.desktop,java.prefs,java.logging').toString()
@@ -63,29 +64,19 @@ def hostArch = System.getProperty('os.arch').toLowerCase()
 def hostKey = (hostMac ? 'macos' : hostWindows ? 'windows' : 'linux') + '-' + (hostArch in ['aarch64', 'arm64'] ? 'aarch64' : 'x64')
 
 // ---------------------------------------------------------------------------------------------
-// Compile the single source file in the project root
+// The source: src/main/java/tiresias, one file per class in packages by area (spec, editor, traffic, ui); the entry
+// point is tiresias.Tiresias
 
-// The source can sit next to this file or in src/main/java.
-def sourceCandidates = ['Tiresias.java', 'src/main/java/Tiresias.java'].collect { file(it) }
-def sourceFile = sourceCandidates.find { it.exists() }
-
-sourceSets {
-    main {
-        java {
-            srcDirs = [sourceFile ? sourceFile.parentFile : file('src/main/java')]
-            include 'Tiresias.java'
-        }
-    }
-}
+def mainClassName = 'tiresias.Tiresias'
+def entryPoint = file('src/main/java/tiresias/Tiresias.java')
 
 // Without the source, Gradle compiles nothing and builds an empty jar, which then fails at launch with
-// "Could not find or load main class Tiresias". Stop the build here instead.
+// "Could not find or load main class". Stop the build here instead.
 tasks.register('checkSource') {
-    def found = sourceFile
-    def looked = sourceCandidates.collect { it.absolutePath }
+    def found = entryPoint.exists()
+    def looked = entryPoint.absolutePath
     doLast {
-        if (found == null)
-            throw new GradleException("Tiresias.java not found. Put it next to build.gradle (exact name, case-sensitive). Looked in:\n  " + looked.join('\n  '))
+        if (!found) throw new GradleException("The source isn't where the build expects it. Looked for:\n  " + looked)
     }
 }
 
@@ -105,7 +96,7 @@ jar {
     }
     manifest {
         attributes(
-                'Main-Class': 'Tiresias',
+                'Main-Class': mainClassName,
                 'Multi-Release': 'true',
                 'Implementation-Title': 'Tiresias',
                 'Implementation-Version': appVersion)
@@ -113,8 +104,8 @@ jar {
     from(file('icon.png').exists() ? file('icon.png') : [])   // a custom icon, if there is one, replaces the built-in one
     doLast {
         def jf = archiveFile.get().asFile
-        def ok = new java.util.zip.ZipFile(jf).withCloseable { it.getEntry('Tiresias.class') != null }
-        if (!ok) throw new GradleException("${jf.name} has no Tiresias.class, so it can't start. Check that compileJava ran (not NO-SOURCE).")
+        def ok = new java.util.zip.ZipFile(jf).withCloseable { it.getEntry('tiresias/Tiresias.class') != null }
+        if (!ok) throw new GradleException("${jf.name} has no tiresias/Tiresias.class, so it can't start. Check that compileJava ran (not NO-SOURCE).")
     }
 }
 
@@ -122,7 +113,7 @@ tasks.register('runApp', JavaExec) {
     group = 'application'
     description = 'Runs the browser. Open a folder with -Pspec=path'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'Tiresias'
+    mainClass = mainClassName
     if (findProperty('spec')) args findProperty('spec').toString()
 }
 
@@ -132,7 +123,7 @@ tasks.register('icons', JavaExec) {
     group = 'distribution'
     description = 'Exports the app icon as .png, .icns and .ico (from icon.png if present, else the built-in design)'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'Tiresias'
+    mainClass = mainClassName
     jvmArgs '-Djava.awt.headless=true'
     args '--export-icons', iconDir.get().asFile.absolutePath
     if (customIcon.exists()) { args customIcon.absolutePath; inputs.file(customIcon) }
@@ -143,7 +134,7 @@ tasks.register('validateSpec', JavaExec) {
     group = 'verification'
     description = 'Validates spec files without a display: -Pspec=path [-Pstrict to also fail on warnings]'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'Tiresias'
+    mainClass = mainClassName
     args '--validate', (findProperty('spec') ?: '.').toString()
     if (project.hasProperty('strict')) args '--strict'
 }
@@ -388,6 +379,80 @@ tasks.register('bundleAll') {
 }
 
 // ---------------------------------------------------------------------------------------------
+// macOS disk image: build/dist/Tiresias-<version>-macos-aarch64.dmg, the bundle's Tiresias.app beside an
+// Applications shortcut over a background drawn by packaging/DmgBackground.java. Needs a Mac (dmgbuild runs hdiutil) and dmgbuild:
+//   pip install dmgbuild==1.6.7      (2.x drives `diskutil image`, which older macOS lacks; 1.6.x uses hdiutil)
+//   gradle dmg                                          builds the macOS bundle first, then the .dmg
+//   gradle dmg -PmacBundle=Tiresias-1.2.0-macos-aarch64.tar.gz   uses an already built bundle (what CI does)
+//   gradle dmg -Pdmgbuild=/path/to/dmgbuild              if dmgbuild isn't on PATH (for example in a venv)
+// The window layout is in packaging/dmg-settings.py; the art is drawn by packaging/DmgBackground.java.
+
+def dmgKey = 'macos-aarch64'
+if (platforms.containsKey(dmgKey)) {
+    def tool = (findProperty('dmgbuild') ?: '').toString()
+    def pathDirs = (System.getenv('PATH') ?: '').split(File.pathSeparator).toList()
+    def findDmgbuild = { -> tool ? new File(tool) : pathDirs.collect { new File(it, 'dmgbuild') }.find { it.canExecute() } }
+
+    // Checked before the bundle is built, so a missing tool fails in a second rather than after jlink
+    def dmgTools = tasks.register('checkDmgTools') {
+        description = 'Checks that this machine can build the .dmg (macOS with dmgbuild)'
+        def onMac = hostMac
+        def osName = System.getProperty('os.name')
+        doLast {
+            if (!onMac)
+                throw new GradleException("The .dmg can only be built on macOS, because dmgbuild uses hdiutil; this machine runs ${osName}. " +
+                        "bundle${capName(dmgKey)} builds the macOS .tar.gz on any OS, and the release workflow makes the .dmg on a macOS runner.")
+            def exe = findDmgbuild()
+            if (exe == null || !exe.canExecute())
+                throw new GradleException((tool ? "dmgbuild not found at ${tool}." : "dmgbuild isn't installed (not found on PATH).") +
+                        " Install it with: pip install dmgbuild==1.6.7, or point at it with -Pdmgbuild=/path/to/dmgbuild")
+        }
+    }
+
+    tasks.named("bundle${capName(dmgKey)}").configure { mustRunAfter dmgTools }
+
+    tasks.register('dmg', Exec) {
+        group = 'distribution'
+        description = "Builds the macOS disk image (.dmg) from the ${dmgKey} bundle. Needs macOS and dmgbuild"
+        def given = findProperty('macBundle')
+        def bundleTask = tasks.named("bundle${capName(dmgKey)}", Tar)
+        dependsOn dmgTools
+        if (!given) dependsOn bundleTask
+        def tarFile = given ? file(given.toString()) : bundleTask.get().archiveFile.get().asFile
+        def stage = layout.buildDirectory.dir('dmg').get().asFile
+        def out = layout.buildDirectory.file("dist/Tiresias-${appVersion}-${dmgKey}.dmg").get().asFile
+        def settings = file('packaging/dmg-settings.py')
+        // The background art is drawn at build time (packaging/DmgBackground.java), so the PNGs aren't kept in git
+        def artScript = file('packaging/DmgBackground.java')
+        def artDir = layout.buildDirectory.dir('dmg-art').get().asFile
+        def background = new File(artDir, 'dmg-background.png')
+        inputs.files(tarFile, settings, artScript)
+        outputs.file(out)
+        args '-s', settings.absolutePath,
+                '-D', "app=${new File(stage, 'Tiresias.app').absolutePath}",
+                '-D', "background=${background.absolutePath}",
+                'Tiresias', out.absolutePath
+        doFirst {
+            if (!tarFile.exists())
+                throw new GradleException("The macOS bundle ${tarFile} doesn't exist. Build it with gradle bundle${capName(dmgKey)}, or fix the -PmacBundle path.")
+            executable findDmgbuild().absolutePath
+            // Unpack with tar so the launcher and runtime keep their executable bits
+            stage.deleteDir()
+            stage.mkdirs()
+            def unpack = new ProcessBuilder('tar', '-xzf', tarFile.absolutePath, '-C', stage.absolutePath).inheritIO().start()
+            if (unpack.waitFor() != 0 || !new File(stage, 'Tiresias.app/Contents/MacOS/Tiresias').canExecute())
+                throw new GradleException("Could not unpack Tiresias.app from ${tarFile}")
+            artDir.deleteDir()
+            def art = new ProcessBuilder(jdkTool('java'), artScript.absolutePath, artDir.absolutePath).inheritIO().start()
+            if (art.waitFor() != 0 || !background.exists() || !new File(artDir, 'dmg-background@2x.png').exists())
+                throw new GradleException("Could not draw the disk image background with ${artScript}")
+            out.delete()   // never leave an older image behind if this run fails
+            out.parentFile.mkdirs()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Native app for the current machine (real .exe / .app launcher) using jpackage
 
 tasks.register('appImage', Exec) {
@@ -404,7 +469,7 @@ tasks.register('appImage', Exec) {
             '--app-version', appVersion,
             '--input', layout.buildDirectory.dir('libs').get().asFile.absolutePath,
             '--main-jar', 'Tiresias.jar',
-            '--main-class', 'Tiresias',
+            '--main-class', mainClassName,
             '--runtime-image', layout.buildDirectory.dir("runtimes/${hostKey}").get().asFile.absolutePath,
             '--dest', dest.absolutePath
     args '--icon', new File(iconDir.get().asFile, hostMac ? 'icon.icns' : hostWindows ? 'icon.ico' : 'icon.png').absolutePath
@@ -463,7 +528,7 @@ def withNode = { step ->
 
 spotless {
     java {
-        target 'Tiresias.java', 'src/main/java/**/*.java'
+        target 'src/main/java/**/*.java'
         // Escape hatch: code between // spotless:off and // spotless:on is never passed to the formatter,
         // for the rare construct prettier-plugin-java can't parse or formats badly.
         toggleOffOn()
